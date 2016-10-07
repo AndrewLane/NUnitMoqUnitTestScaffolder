@@ -1,0 +1,136 @@
+<html>
+
+<head>
+    <script src="http://code.jquery.com/jquery-3.1.1.slim.min.js" integrity="sha256-/SIrNqv8h6QGKDuNoLGA4iret+kyesCkHGzVUUV0shc="
+        crossorigin="anonymous"></script>
+
+    <script>
+            $(function() {
+                $("#btnProcessSourceCode").click(function() { tryOperation(processSourceCode); });
+            });
+
+            function processSourceCode() {
+                var sourceCode = $("#txtSource").val();
+
+                var className = findClass(sourceCode);                
+                var dependencies = findDependencies(sourceCode);
+
+                updateResults(fillInBoilerplateCode(className, dependencies));    
+            }
+
+            function fillInBoilerplateCode(className, dependencies) {
+                var dependencyDeclarations = '';
+                var dependencyInits = '';
+                var dependencyMockList = '';
+
+                for(i=0;i<dependencies.length;i++) {
+                    var dependency = dependencies[i];
+                    dependencyDeclarations += 'private Mock<' + dependency.interface + '> ' + dependency.variableName + 'Mock;' + '\n';
+                    dependencyInits += dependency.variableName + 'Mock = new Mock<' + dependency.interface + '>(MockBehavior.Strict);' + '\n';
+                    dependencyMockList += (i == 0 ? '' : ', ') +  dependency.variableName + 'Mock.Object';
+                }
+                
+                var boilerPlateCode = `using Moq;
+using NUnit.Framework;
+
+namespace fix_your_namespace
+{
+    /// <summary>
+    /// Unit tests for the {className} class
+    /// </summary>
+    [TestFixture]
+    public class Test{className}
+    {
+        {dependencyDeclarations}
+
+        [Test]
+        public void TestIt()
+        {
+            var objectUnderTest = InitMocksAndReturnObjectUnderTest();
+        }
+
+
+        /// <summary>
+        /// Helper method to init mocks and return the object under test
+        /// </summary>
+        private {className} InitMocksAndReturnObjectUnderTest()
+        {
+            {dependencyInits}
+            
+            return new {className}({dependencyMockList});
+        }
+    }
+}
+`;
+                 return boilerPlateCode.replace(/\{className\}/g, className).replace("{dependencyDeclarations}", dependencyDeclarations).replace("{dependencyInits}", dependencyInits).replace("{dependencyMockList}", dependencyMockList);
+
+            }
+
+            function tryOperation(op) {
+                try {
+                    op();
+                }
+                catch(err) {
+                    updateResults("Error! " + err + ' ' + (err.message === undefined ? '' : err.message));
+                }                
+            }
+            
+
+            function updateResults(text) {
+                $("#txtResults").val(text);
+            }
+
+            function findClass(text) {
+                var match = text.match(/\s+class\s+(\w+)\s+:\s+I/);
+                if (match) {
+                    return match[1];
+                } 
+
+                throw "Could not find class name!";
+            }
+
+            function findDependencies(sourceCode) {
+                var regex = /private\s+readonly\s+(I(\w+))\s+(\_\w+)\;/g;
+                var matches;
+                var deps = new Array();
+                while ((matches = regex.exec(sourceCode)) != null) {
+                    var interface = matches[1];
+                    var variableName = matches[3];
+                    deps[deps.length] = { "interface": interface, "variableName": variableName};
+                }
+                
+                if (deps.length == 0) throw "Could not find any dependencies!";
+                return deps;
+            }                    
+        </script>
+</head>
+
+<body>
+    Copy your source code here: <br/>
+    <textarea id="txtSource" cols="100" rows="10">namespace my_name_space
+{
+    internal class MyClassThatNeedsTests : IDoSomething
+    {
+        private readonly IAmDependency1 _dependency1;
+        private readonly IAmDependency2 _dependency2;
+
+        public MyClass (IAmDependency1 dependency1, IAmDependency2 dependency2)
+        {
+            if (dependency1 == null) throw new ArgumentNullException(nameof(dependency1));
+            if (dependency2 == null) throw new ArgumentNullException(nameof(dependency2));
+            _dependency1 = dependency1;
+            _dependency2 = dependency2;
+        }
+
+        //implementation of the class
+    }
+}</textarea>
+    <br/>
+    <input type="button" value="Generate Moq NUnit Test Scaffolding" id="btnProcessSourceCode" />
+
+    <br/>
+    <br/> Results: <br />
+    <textarea id="txtResults" cols="100" rows="10"></textarea>
+</body>
+
+</html>
